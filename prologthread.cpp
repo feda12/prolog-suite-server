@@ -69,14 +69,15 @@ void PrologThread::readyRead()
     if(_process->processId() != 0)
     {
 //        If needed, we can compare command in case we want to specifically do something.
-        if(command.left(5) == "consult")
+        if(command.left(7) == "consult")
         {
             QString fileContent = command.right(command.size()-5);
-            QTemporaryFile file;
+            QTemporaryFile file("prolog_X_consult_X.pl");
              if (file.open()) {
                     file.write(fileContent.toStdString().c_str(), fileContent.size());
-                    QString absPath = "'"+QDir::tempPath()+file.fileName()+"'";
-                    QString consultCmd = "consult("+absPath+"). \r\n";
+                    QString absPath = QDir::tempPath()+file.fileName();
+                    QString consultCmd = "consult(\""+absPath.left(absPath.size()-2)+"\"). \r\n";
+                    qDebug() << consultCmd;
                     _process->write(consultCmd.toStdString().c_str());
               }
              else {

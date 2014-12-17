@@ -8,7 +8,7 @@ PrologServer::PrologServer(QObject *parent) :
 
 void PrologServer::startServer(QString prologPath)
 {
-    int port = 8790;
+    int port = 8795;
 
     if(!this->listen(QHostAddress::Any, port))
         qDebug() << "Could not start server on port " << port;
