@@ -7,7 +7,7 @@ PrologThread::PrologThread(qintptr socketId, QString prologPath, QObject *parent
     _process = new QProcess;
     QObject::connect(this, SIGNAL(started()), this, SLOT(startProcess()));
     QObject::connect(_process, SIGNAL(readyReadStandardOutput()), this, SLOT(readStdOut()));
-    QObject::connect(_process, SIGNAL(readyReadErrorOutput()), this, SLOT(readErrOut()));
+    QObject::connect(_process, SIGNAL(readyReadStandardError()), this, SLOT(readErrOut()));
     QObject::connect(_process, SIGNAL(started()), this, SLOT(processStarted()));
     QObject::connect(_process, SIGNAL(error(QProcess::ProcessError)), this, SLOT(processError(QProcess::ProcessError)));
     _process->setProcessChannelMode(QProcess::MergedChannels);
@@ -21,7 +21,7 @@ void PrologThread::run()
     // thread starts here
     qDebug() << " [Server] Prolog Thread started";
 
-    _socket = new QTcpSocket();
+    _socket = new QTcpSocket;
 
     // We set the id of the socket descriptor
     if(!_socket->setSocketDescriptor(_socketId))
@@ -62,22 +62,21 @@ void PrologThread::readyRead()
     // Si ces lignes s'exécutent, c'est qu'on a reçu tout le message : on peut le récupérer !
     QString command;
     in >> command;
-    qDebug() << _socketId << " Data in: " << command;
-    if(command.right(5)  == ".\r\n")
-        command = command.left(command.size()-5);
+    if(command.right(2)  == "\r\n")
+        command = command.left(command.size()-2);
 
     if(_process->processId() != 0)
     {
 //        If needed, we can compare command in case we want to specifically do something.
         if(command.left(7) == "consult")
         {
-            QString fileContent = command.right(command.size()-5);
-            QTemporaryFile file("prolog_X_consult_X.pl");
-             if (file.open()) {
+            QString fileContent = command.right(command.size()-7);
+            QFile file("/Users/blecam/prolog-consult.pl");
+             if (file.open( QIODevice::Truncate|QIODevice::ReadWrite)) {
+                    file.reset();
                     file.write(fileContent.toStdString().c_str(), fileContent.size());
-                    QString absPath = QDir::tempPath()+file.fileName();
-                    QString consultCmd = "consult(\""+absPath.left(absPath.size()-2)+"\"). \r\n";
-                    qDebug() << consultCmd;
+                    QString absPath = file.fileName();
+                    QString consultCmd = "consult(\'"+absPath+"\'). \r\n";
                     _process->write(consultCmd.toStdString().c_str());
               }
              else {
@@ -85,13 +84,11 @@ void PrologThread::readyRead()
              }
         }
         else{
-             command.append(".\r\n");
-            qDebug() << "Sending command to prolog";
+             command.append("\r\n");
             _process->write(command.toStdString().c_str());
         }
         if(!_process->waitForBytesWritten())
         {
-            qDebug() << "Could not send command to Prolog";
         }
     }
     _cmdSize = 0;
@@ -102,6 +99,7 @@ void PrologThread::disconnected()
 {
     qDebug() << "[Thread] " << _socketId << " Disconnected";
 
+    _process->kill();
     _socket->deleteLater();
     terminate();
 }
@@ -126,14 +124,14 @@ void PrologThread::processError(QProcess::ProcessError error)
 void PrologThread::readStdOut()
 {
     QByteArray output = _process->readAllStandardOutput();
-    qDebug() << "[Thread] " << output;
+//    qDebug() << "[Prolog] " << output;
     sendData(output);
 }
 
 void PrologThread::readErrOut()
 {
     QByteArray errOutput = _process->readAllStandardError();
-    qDebug() << "[Thread Error] " << errOutput;
+//    qDebug() << "[Prolog] " << errOutput;
 
     sendData(errOutput);
 }
@@ -141,20 +139,23 @@ void PrologThread::readErrOut()
 
 void PrologThread::sendData(QByteArray results)
 {
-    qDebug() << "Sending results " << results;
     QByteArray packet;
     QDataStream out(&packet, QIODevice::WriteOnly);
 
+    QString toSend(results);
+    qDebug() << toSend;
     out << (quint16) 0;
-    out << results;
+    out << toSend;
     out.device()->seek(0);
     out << (quint16) (packet.size() - sizeof(quint16));
 
-    _socket->write(packet); // On envoie le paquet
+    _socket->write(packet);
+    _socket->flush();
 }
 
 void PrologThread::sendStr(QString str)
 {
-    sendData(str.toStdString().c_str());
+    str.replace("\n", " ");
+    sendData(QByteArray(str.toStdString().c_str()));
 }
 
